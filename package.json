@@ -1,0 +1,33 @@
+{
+  "name": "elegi-tu-ronda",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "tsx --env-file-if-exists=.env scripts/dev.ts",
+    "build": "tsc --noEmit && vite build",
+    "test": "tsx --test tests/*.test.ts",
+    "test:db": "tsx --env-file-if-exists=.env --test tests/database.integration.ts",
+    "db:setup": "tsx --env-file-if-exists=.env scripts/setup.ts",
+    "roster:import": "tsx --env-file-if-exists=.env scripts/import-roster.ts",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "pg": "^8.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.15.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.0.0",
+    "tsx": "^4.20.0",
+    "@playwright/test": "^1.55.0"
+  }
+}

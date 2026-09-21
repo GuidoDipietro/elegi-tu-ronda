@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+.vercel/
+test-results/
+playwright-report/
+
+# Editor-created copies may contain credentials.
+.env *
