@@ -5,8 +5,8 @@ import {
   requireId,
   validateBooking,
   validateCapacity,
-} from "../domain.ts";
-import type { AdminState, Competitor, PlannerState } from "../types.ts";
+} from "../domain.js";
+import type { AdminState, Competitor, PlannerState } from "../types.js";
 
 export class Planner {
   constructor(private pool: Pool) {}

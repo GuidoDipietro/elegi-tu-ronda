@@ -1,4 +1,4 @@
-import type { Booking, CompetitionEvent } from "./domain.ts";
+import type { Booking, CompetitionEvent } from "./domain.js";
 export interface Competitor {
   id: string;
   name: string;

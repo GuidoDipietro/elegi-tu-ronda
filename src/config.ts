@@ -11,7 +11,7 @@ export const competition = {
   solvingMinutes: 20,
   url: "https://www.worldcubeassociation.org/competitions/ElegiTuRondaBA2026",
 };
-import type { CompetitionEvent } from "./domain.ts";
+import type { CompetitionEvent } from "./domain.js";
 export const seedEvents: CompetitionEvent[] = [
   { id: "222", name: "2x2x2", label: "2x2", rounds: [1, 2] },
   { id: "666", name: "6x6x6", label: "6x6", rounds: [1, 2] },

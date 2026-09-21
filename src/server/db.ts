@@ -1,6 +1,6 @@
 import pg from "pg";
 import { rootCertificates } from "node:tls";
-import { supabaseCa } from "./supabase-ca.ts";
+import { supabaseCa } from "./supabase-ca.js";
 let pool: pg.Pool | undefined;
 export function database(): pg.Pool {
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");

@@ -1,13 +1,13 @@
-import { BookingError } from "../domain.ts";
-import { competition } from "../config.ts";
+import { BookingError } from "../domain.js";
+import { competition } from "../config.js";
 import {
   adminCookie,
   checkPassword,
   clearAdminCookie,
   isAdmin,
-} from "./auth.ts";
-import { database } from "./db.ts";
-import { Planner } from "./service.ts";
+} from "./auth.js";
+import { database } from "./db.js";
+import { Planner } from "./service.js";
 
 const json = (
   body: unknown,
