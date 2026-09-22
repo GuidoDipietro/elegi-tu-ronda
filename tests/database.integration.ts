@@ -42,7 +42,7 @@ before(async () => {
 beforeEach(async () => {
   await pool.query("TRUNCATE planner.bookings, planner.competitors CASCADE");
   await pool.query("UPDATE planner.slots SET capacity=10");
-  await pool.query("UPDATE planner.settings SET locked=false");
+  await pool.query("UPDATE planner.settings SET locked=false, max_slots=2");
 });
 after(async () => {
   await pool.end();
@@ -268,4 +268,52 @@ test("admin API is protected, validates origin, and accepts signed sessions", as
     200,
   );
   assert.equal((await planner.state(null)).slots[0].capacity, 0);
+});
+
+test("limits serialize bookings across slots, including direct SQL and admin saves", async () => {
+  const person = await planner.identify("Limit Person");
+  await planner.limit(1);
+  const results = await Promise.allSettled(seedSlots.map((s, i) => i % 2
+    ? planner.save(booking(person.id, { slotId: s.id }), true)
+    : pool.query("INSERT INTO planner.bookings(competitor_id,slot_id,event_id,round) VALUES ($1,$2,'222',1)", [person.id, s.id])));
+  assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+  for (const r of results) if (r.status === "rejected") assert.equal(r.reason.message, "BOOKING_LIMIT");
+});
+test("waves increase total allowance; lowering preserves edits; cancellations restore allowance", async () => {
+  const person = await planner.identify("Wave Person");
+  await planner.save(booking(person.id));
+  await planner.save(booking(person.id, { slotId: "slot-b" }));
+  await assert.rejects(planner.save(booking(person.id, { slotId: "slot-c" })), /BOOKING_LIMIT/);
+  await planner.limit(4);
+  for (const slotId of ["slot-c", "slot-d"]) await planner.save({ competitorId: person.id, slotId, eventId: "fto" });
+  assert.equal((await planner.state(person.id)).maxSlots, 4);
+  await planner.limit(1);
+  await planner.save({ competitorId: person.id, slotId: "slot-a", eventId: "222" });
+  assert.equal((await planner.state(person.id)).slots.filter((s) => s.booking).length, 4);
+  await planner.limit(4);
+  await planner.remove(booking(person.id));
+  await planner.save(booking(person.id, { slotId: "slot-e" }));
+  await planner.limit(0);
+  await assert.rejects(planner.save(booking(person.id, { slotId: "slot-f" })), /BOOKING_LIMIT/);
+});
+test("limit API is protected, validates values, and returns conflict for stale clients", async () => {
+  const post = (body: unknown, cookie = "") => handle(new Request("http://localhost/api/planner", { method: "POST", headers: { "content-type": "application/json", cookie }, body: JSON.stringify(body) }));
+  assert.equal((await post({ action: "limit", maxSlots: 4 })).status, 401);
+  const login = await post({ action: "login", password: process.env.ADMIN_PASSWORD });
+  const cookie = login.headers.get("set-cookie")!;
+  for (const maxSlots of [-1, 1.5, "2", null, 2147483648]) assert.equal((await post({ action: "limit", maxSlots }, cookie)).status, 400);
+  assert.equal((await post({ action: "limit", maxSlots: 0 }, cookie)).status, 200);
+  const person = await planner.identify("Stale Client");
+  const response = await post({ action: "save", competitorId: person.id, slotId: "slot-a", eventId: "222" });
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).code, "BOOKING_LIMIT");
+});
+test("schema upgrade is repeatable and preserves configured limits and bookings", async () => {
+  const person = await planner.identify("Migration Person");
+  await planner.save(booking(person.id));
+  await planner.limit(6);
+  await pool.query(await readFile(new URL("../db/schema.sql", import.meta.url), "utf8"));
+  const state = await planner.state(person.id);
+  assert.equal(state.maxSlots, 6);
+  assert.equal(state.slots[0].booking?.round, 2);
 });

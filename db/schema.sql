@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS planner.competitors (
 CREATE TABLE IF NOT EXISTS planner.settings (
   id boolean PRIMARY KEY DEFAULT true CHECK (id), locked boolean NOT NULL DEFAULT false
 );
+ALTER TABLE planner.settings ADD COLUMN IF NOT EXISTS max_slots integer NOT NULL DEFAULT 2 CHECK (max_slots >= 0);
 INSERT INTO planner.settings(id) VALUES (true) ON CONFLICT DO NOTHING;
 CREATE TABLE IF NOT EXISTS planner.bookings (
   competitor_id uuid NOT NULL REFERENCES planner.competitors(id) ON DELETE CASCADE,
@@ -25,17 +26,23 @@ CREATE TABLE IF NOT EXISTS planner.bookings (
 );
 CREATE INDEX IF NOT EXISTS bookings_slot ON planner.bookings(slot_id);
 
--- All writers, including direct SQL, serialize on the same Slot row.
--- A repeated event/round across different Slots is intentionally allowed.
+-- All writers serialize on settings, competitor, then Slot rows.
+-- Repeating an event across different Slots is intentionally allowed.
 CREATE OR REPLACE FUNCTION planner.enforce_capacity() RETURNS trigger
 LANGUAGE plpgsql SET search_path = planner, pg_temp AS $$
-DECLARE slot_capacity integer;
+DECLARE slot_capacity integer; booking_limit integer;
 BEGIN
   IF TG_OP = 'UPDATE' AND (NEW.slot_id <> OLD.slot_id OR NEW.competitor_id <> OLD.competitor_id) THEN
     RAISE EXCEPTION 'BOOKING_IDENTITY_IMMUTABLE';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM planner.events WHERE id = NEW.event_id AND NEW.round = ANY(rounds)) THEN
     RAISE EXCEPTION 'INVALID_EVENT_ROUND';
+  END IF;
+  SELECT max_slots INTO booking_limit FROM planner.settings WHERE id=true FOR SHARE;
+  PERFORM id FROM planner.competitors WHERE id=NEW.competitor_id FOR UPDATE;
+  IF NOT EXISTS (SELECT 1 FROM planner.bookings WHERE slot_id=NEW.slot_id AND competitor_id=NEW.competitor_id)
+     AND (SELECT count(*) FROM planner.bookings WHERE competitor_id=NEW.competitor_id) >= booking_limit THEN
+    RAISE EXCEPTION 'BOOKING_LIMIT';
   END IF;
   SELECT capacity INTO slot_capacity FROM planner.slots WHERE id = NEW.slot_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'SLOT_NOT_FOUND'; END IF;

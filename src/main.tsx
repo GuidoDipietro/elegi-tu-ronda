@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { api, ApiError, storedPerson, storePerson } from "./client.ts";
 import { competition } from "./config.ts";
 import { scheduleCsv, timeLabel } from "./format.ts";
-import type { Booking, CompetitionEvent, Round } from "./domain.ts";
+import type { Booking, CompetitionEvent } from "./domain.ts";
 import type {
   AdminState,
   Competitor,
@@ -127,20 +127,21 @@ function SlotCard({
   onSave,
   onRemove,
   continuation = false,
+  limitReached = false,
 }: {
   slot: SlotView;
   events: CompetitionEvent[];
   enabled: boolean;
   locked: boolean;
   busy: boolean;
-  onSave: (slotId: string, eventId: string, round: Round) => Promise<boolean>;
+  onSave: (slotId: string, eventId: string) => Promise<boolean>;
   onRemove: (slotId: string) => Promise<boolean>;
   continuation?: boolean;
+  limitReached?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [eventId, setEventId] = useState("");
-  const [round, setRound] = useState<Round>(1);
   const booking = slot.booking;
   const full = slot.occupancy >= slot.capacity;
   const over = slot.occupancy > slot.capacity;
@@ -151,13 +152,12 @@ function SlotCard({
     : 100;
   function edit() {
     setEventId(booking?.eventId || "");
-    setRound(booking?.round || 1);
     setEditing(true);
     setRemoving(false);
   }
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (eventId && (await onSave(slot.id, eventId, round))) setEditing(false);
+    if (eventId && (await onSave(slot.id, eventId))) setEditing(false);
   }
   return (
     <article
@@ -219,16 +219,7 @@ function SlotCard({
               value={eventId}
               required
               disabled={busy || locked}
-              onChange={(e) => {
-                const value = e.target.value;
-                setEventId(value);
-                if (
-                  !events
-                    .find((event) => event.id === value)
-                    ?.rounds.includes(round)
-                )
-                  setRound(1);
-              }}
+              onChange={(e) => setEventId(e.target.value)}
             >
               <option value="">Elegí un evento…</option>
               {events.map((event) => (
@@ -238,30 +229,10 @@ function SlotCard({
               ))}
             </select>
           </label>
-          <fieldset disabled={busy || locked || !eventId}>
-            <legend>Ronda</legend>
-            <div className="round-options">
-              {(selected?.rounds || [1, 2]).map((value) => (
-                <label
-                  className={round === value ? "selected" : ""}
-                  key={value}
-                >
-                  <input
-                    type="radio"
-                    name={`round-${slot.id}`}
-                    value={value}
-                    checked={round === value}
-                    onChange={() => setRound(value as Round)}
-                  />
-                  Ronda {value}
-                </label>
-              ))}
-            </div>
-          </fieldset>
           <div className="actions">
             <button
               className="primary"
-              disabled={busy || locked || !selected || (!booking && full)}
+              disabled={busy || locked || !selected || (!booking && (full || limitReached))}
             >
               {busy ? "Guardando…" : "Guardar lugar"}
             </button>
@@ -279,7 +250,7 @@ function SlotCard({
         <div className="booking">
           <div>
             <strong>
-              {bookedEvent?.label || booking.eventId} R{booking.round}
+              {bookedEvent?.label || booking.eventId}
             </strong>
             {continuation && <small>También en otro Slot</small>}
           </div>
@@ -295,7 +266,7 @@ function SlotCard({
         <button
           className="choose"
           onClick={edit}
-          disabled={busy || locked || !enabled || full}
+          disabled={busy || locked || !enabled || full || limitReached}
         >
           {full
             ? "Completo"
@@ -303,7 +274,7 @@ function SlotCard({
               ? "Reservas cerradas"
               : !enabled
                 ? "Ingresá tu nombre para elegir"
-                : "＋ Elegir evento y ronda"}
+                : limitReached ? "Límite de Slots alcanzado" : "＋ Elegir evento"}
         </button>
       )}
       {booking && !editing && enabled && !locked && (
@@ -341,6 +312,13 @@ function SlotCard({
       )}
     </article>
   );
+}
+function LimitForm({ value, busy, onSave }: { value: number; busy: boolean; onSave: (value: number) => Promise<boolean> }) {
+  const [limit, setLimit] = useState(String(value));
+  return <form className="identity-fields" onSubmit={(e) => { e.preventDefault(); void onSave(Number(limit)); }}>
+    <label>Máximo de Slots por competidor<input type="number" min="0" max="2147483647" step="1" required value={limit} disabled={busy} onChange={(e) => setLimit(e.target.value)} /></label>
+    <button className="primary" disabled={busy || limit === "" || Number(limit) === value}>Guardar límite</button>
+  </form>;
 }
 function App() {
   const adminPage =
@@ -402,13 +380,12 @@ function App() {
     action: string,
     slotId: string,
     eventId?: string,
-    round?: Round,
   ) {
     setBusy(true);
     setError("");
     setMessage("");
     try {
-      await api("", { action, competitorId: personId, slotId, eventId, round });
+      await api("", { action, competitorId: personId, slotId, eventId });
       await load();
       setMessage(
         action === "save"
@@ -458,13 +435,13 @@ function App() {
               )}
             </h1>
             <p>
-              Armá tu horario para competir. Elegí un lugar, un evento y una
-              ronda. Lo podés cambiar después.
+              Armá tu horario para competir. Elegí un lugar y un evento.
+              La ronda se define el día de la competencia. Lo podés cambiar después.
             </p>
             <div className="facts">
               <span>◷ 20 min por Slot</span>
               <span>▦ {competition.stations} estaciones</span>
-              <span>↔ Rondas en cualquier orden</span>
+              <span>↔ Podés repetir un evento</span>
             </div>
           </section>
           <Notice message={error} error />
@@ -501,6 +478,7 @@ function App() {
               </button>
             </section>
           )}
+          {state?.competitor && <Notice message={`Podés elegir hasta ${Math.max(0, state.maxSlots - bookings.length)} Slots garantizados más. Límite actual: ${state.maxSlots} por persona. Organización habilitará más lugares por etapas.`} />}
           {state?.locked && (
             <Notice message="Las reservas están cerradas. Podés consultar tu horario; para cambiarlo, hablá con organización." />
           )}
@@ -517,8 +495,7 @@ function App() {
                     {
                       state?.events.find((e) => e.id === slot.booking?.eventId)
                         ?.label
-                    }{" "}
-                    R{slot.booking?.round}
+                    }
                   </a>
                 ))}
               </div>
@@ -553,8 +530,9 @@ function App() {
                       enabled={!!state.competitor}
                       locked={state.locked}
                       busy={busy}
-                      onSave={(id, event, round) =>
-                        mutate("save", id, event, round)
+                      limitReached={bookings.length >= state.maxSlots}
+                      onSave={(id, event) =>
+                        mutate("save", id, event)
                       }
                       onRemove={(id) => mutate("remove", id)}
                       continuation={
@@ -562,8 +540,7 @@ function App() {
                         bookings.some(
                           (other) =>
                             other.id !== slot.id &&
-                            other.booking?.eventId === slot.booking?.eventId &&
-                            other.booking?.round === slot.booking?.round,
+                            other.booking?.eventId === slot.booking?.eventId,
                         )
                       }
                     />
@@ -578,8 +555,7 @@ function App() {
               <h3>¿Necesitás más tiempo?</h3>
               <p>
                 Podés elegir el mismo evento y ronda en varios Slots para
-                continuar. En cada Slot, reservá un solo evento y ronda. Ronda 2
-                puede ir antes que Ronda 1.
+                continuar. En cada Slot, reservá un solo evento. El día de la competencia se define si continuás una ronda o empezás la siguiente.
               </p>
             </div>
           </aside>
@@ -759,7 +735,7 @@ function Admin() {
     })) || [];
   const label = (booking?: Booking) =>
     booking
-      ? `${state?.events.find((event) => event.id === booking.eventId)?.label || booking.eventId} R${booking.round}`
+      ? `${state?.events.find((event) => event.id === booking.eventId)?.label || booking.eventId}`
       : "—";
   return (
     <main className="admin">
@@ -831,6 +807,11 @@ function Admin() {
           {state.locked && (
             <Notice message="Reservas cerradas para competidores. Organización puede seguir editando." />
           )}
+          <section>
+            <h2>Slots garantizados por competidor</h2>
+            <p>El límite es el total por persona. Subilo de 2 a 4, luego a 6, para habilitar más lugares por etapas. Reducirlo conserva las reservas existentes.</p>
+            <LimitForm key={state.maxSlots} value={state.maxSlots} busy={busy} onSave={(maxSlots) => action({ action: "limit", maxSlots }, "Límite actualizado.")} />
+          </section>
           <section>
             <div className="section-heading">
               <h2>Cupos por Slot</h2>
@@ -981,13 +962,13 @@ function Admin() {
                       enabled
                       locked={false}
                       busy={busy}
-                      onSave={(slotId, eventId, round) =>
+                      limitReached={selectedSlots.filter((s) => s.booking).length >= state.maxSlots}
+                      onSave={(slotId, eventId) =>
                         action({
                           action: "save",
                           competitorId: selected,
                           slotId,
                           eventId,
-                          round,
                         })
                       }
                       onRemove={(slotId) =>

@@ -6,8 +6,8 @@ A one-off Spanish slot planner: React + TypeScript + Vite, one Vercel function, 
 
 - Anyone can enter a name. Re-entering the same name opens that person's schedule. Names match ignoring case, accents and repeated spaces; people with identical names should add an initial or other distinguishing text. This is deliberately open, like crab.fit: knowing a name lets someone edit its bookings.
 - WCA IDs work after importing the roster. There is no restriction to registered events. The public occupancy screen does not list competitors; the protected admin matrix does.
-- Eight official events have R1/R2. Unofficial FTO has **R1 only**.
-- One event/round per person per Slot. R2 can precede R1. The same event/round can occupy multiple Slots.
+- Competitors select only an event for each Slot, including unofficial FTO. The round is determined on competition day; the same event can occupy multiple Slots.
+- Each competitor starts with a maximum of **2 guaranteed Slots**. Organization changes the total in `/admin` (for example 2 → 4 → 6). The limit also applies to admin bookings. Lowering it preserves existing bookings and allows edits/cancellations, but blocks new bookings until the person is below the limit. Cancellations restore allowance.
 - Lowering capacity keeps existing reservations and flags overbooking. Existing bookings can still be edited or removed; new people cannot book a full or overbooked Slot.
 - One organizer password, stored only on the server. Signed HttpOnly cookies expire after eight hours. Changing the password invalidates existing sessions.
 - Reservations can be closed. Organizers can still edit while closed; competitors can only view.
@@ -73,15 +73,15 @@ Imports preserve identities and existing bookings. Duplicate normalized names in
 - `src/server/service.ts`: transactions and booking operations.
 - `src/main.tsx`: competitor timeline and organizer UI.
 
-`competitors` holds a stable ID, display name, normalized name and optional WCA ID. `events` defines allowed rounds. `slots` defines start time and capacity. `bookings` has `(competitor_id, slot_id)` as its primary key. `settings` stores the reservation lock.
+`competitors` holds a stable ID, display name, normalized name and optional WCA ID. `events` defines allowed rounds. `slots` defines start time and capacity. `bookings` has `(competitor_id, slot_id)` as its primary key. `settings` stores the reservation lock and `max_slots` limit. Legacy round columns remain for deployment compatibility and historical bookings; event-only requests default to the internal round value 1, which is not displayed or used to decide the competition-day round.
 
 For this competition, change live capacities in `/admin`. Other live schedule changes can be made in Supabase's SQL editor; timestamps are `timestamptz`. Seed reruns insert new Slot IDs but do not rewrite existing Slot timestamps or remove old Slots. Do not change Slot IDs with live bookings. To reuse the app for another competition, update `src/config.ts` and start with a fresh database/schema; this is intentionally a single-competition app.
 
 ## Capacity and concurrency
 
-The booking transaction takes a shared lock on the reservation setting, then a `FOR UPDATE` lock on the Slot. It reads occupancy, validates the requested event/round, and upserts the booking before committing. Capacity changes lock the same Slot row, so they serialize with bookings. Closing reservations waits for in-flight booking transactions.
+The booking transaction takes a shared lock on the reservation setting, then a `FOR UPDATE` lock on the competitor and then the Slot. It reads occupancy, validates the requested event/round, and upserts the booking before committing. Capacity changes lock the same Slot row, so they serialize with bookings. Closing reservations waits for in-flight booking transactions.
 
-The SQL trigger independently takes the Slot lock and rejects excess new bookings, including direct SQL inserts. PostgreSQL's primary key prevents two bookings by one person in one Slot. Foreign keys and round checks prevent dangling or invalid bookings. Updates keep the original place even if capacity has since been reduced. Cancellations use the same lock and are idempotent.
+The SQL trigger independently locks settings, competitor, and Slot in that order and rejects new bookings exceeding either the per-person limit or Slot capacity, including concurrent direct SQL inserts. PostgreSQL's primary key prevents two bookings by one person in one Slot. Foreign keys and round checks prevent dangling or invalid bookings. Updates keep the original place even if capacity has since been reduced. Cancellations use the same lock and are idempotent.
 
 The UI refreshes every 15 seconds and on window focus; the database is authoritative when someone saves. A stale full Slot returns a clear error and refreshes occupancy. Simultaneous edits of the same person's booking use last successful save wins. This is sufficient for the intentionally open name-based model.
 
@@ -107,8 +107,20 @@ npx playwright install chromium
 TEST_DATABASE_URL=postgresql://postgres:test-password@127.0.0.1:55439/ronda_test?sslmode=disable npm run test:e2e
 ```
 
-Alternatively set `CHROME_PATH` to an installed Chrome binary. Browser tests start their own local server and use a test-only admin password. They cover mobile booking/editing, continued rounds, FTO R1, returning by name, full Slots, organizer capacity changes, reservation closure and cancellation. Screenshots are saved under `test-results/`. Stop the disposable database with `docker stop ronda-tests`.
+Alternatively set `CHROME_PATH` to an installed Chrome binary. Browser tests start their own local server and use a test-only admin password. They cover mobile event-only booking/editing, repeated events, FTO, returning by name, full Slots, per-person limits and wave increases, organizer capacity changes, reservation closure and cancellation. Screenshots are saved under `test-results/`. Stop the disposable database with `docker stop ronda-tests`.
 
 ## UX checks included
 
-Full Slots prevent new reservations but remain editable for their owners. Save buttons disable during requests. FTO never offers R2, and the backend rejects it too. Empty event choices cannot save. Repeated rounds display a continuation hint. Canceling an edit leaves the original booking intact. Releasing a place asks for inline confirmation. The current competitor's name stays visible and a separate control switches people. Occupancy is shown with text as well as color, inputs have labels, and the matrix scrolls horizontally on phones. CSV exports neutralize spreadsheet formula prefixes in entered names.
+Full Slots prevent new reservations but remain editable for their owners. Save buttons disable during requests. Round controls and labels are absent from both screens and CSV exports. Empty event choices cannot save. Repeated events display a continuation hint. Competitors see their remaining guaranteed Slot allowance, and new-booking buttons disable at the limit. Canceling an edit leaves the original booking intact. Releasing a place asks for inline confirmation. The current competitor's name stays visible and a separate control switches people. Occupancy is shown with text as well as color, inputs have labels, and the matrix scrolls horizontally on phones. CSV exports neutralize spreadsheet formula prefixes in entered names.
+
+## Deploying the booking-limit update
+
+Apply the additive schema upgrade **before** deploying the new app:
+
+```sh
+npx tsx --env-file=.env.production scripts/setup.ts
+```
+
+This defaults the total allowance to 2, preserves all existing reservations (including people already above 2), and preserves an already configured limit on repeat runs. Existing clients also receive database enforcement immediately. No roster re-import is needed.
+
+Then push `main` to the connected GitHub repository and verify the Vercel production deployment succeeds. If automatic Git deployments are disabled, deploy the latest commit from the Vercel dashboard. Open `/admin` → **Slots garantizados por competidor** to set each wave's total (2, 4, 6…). Competitors receive the updated allowance on their next refresh, within 15 seconds while the page is visible.

@@ -32,7 +32,7 @@ test("mobile booking, continuation, FTO, returning name, and organizer controls"
     await api.post("/api/planner", {
       data: { ...booking, action: "remove", asAdmin: true },
     });
-  await api.dispose();
+  await api.post("/api/planner", { data: { action: "limit", maxSlots: 2 } });
 
   const name = `Álex Browser ${Date.now()}`;
   await page.setViewportSize({ width: 390, height: 844 });
@@ -42,28 +42,34 @@ test("mobile booking, continuation, FTO, returning name, and organizer controls"
   await expect(page.getByRole("heading", { name })).toBeVisible();
   for (const id of ["slot-a", "slot-b"]) {
     const slot = page.locator(`#${id}`);
-    await slot.getByRole("button", { name: "Elegir evento y ronda" }).click();
+    await slot.getByRole("button", { name: "Elegir evento" }).click();
     await slot
       .getByRole("combobox", { name: "Evento", exact: true })
       .selectOption("555bf");
-    await slot.getByRole("radio", { name: "Ronda 2" }).check();
+    await expect(slot.getByRole("radio")).toHaveCount(0);
     await slot.getByRole("button", { name: "Guardar lugar" }).click();
-    await expect(slot.getByText("5BLD R2", { exact: true })).toBeVisible();
+    await expect(slot.getByText("5BLD", { exact: true })).toBeVisible();
   }
   await expect(
     page.locator("#slot-a").getByText("También en otro Slot"),
   ).toBeVisible();
+  await expect(page.getByText("Podés elegir hasta 0 Slots garantizados más.", { exact: false })).toBeVisible();
+  await expect(page.locator("#slot-c").getByRole("button", { name: "Límite de Slots alcanzado" })).toBeDisabled();
+  await api.post("/api/planner", { data: { action: "limit", maxSlots: 4 } });
+  await page.reload();
+  await expect(page.getByText("Podés elegir hasta 2 Slots garantizados más.", { exact: false })).toBeVisible();
+  await api.dispose();
   const fto = page.locator("#slot-c");
-  await fto.getByRole("button", { name: "Elegir evento y ronda" }).click();
+  await fto.getByRole("button", { name: "Elegir evento" }).click();
   await fto
     .getByRole("combobox", { name: "Evento", exact: true })
     .selectOption("fto");
   await expect(fto.getByRole("radio", { name: "Ronda 2" })).toHaveCount(0);
   await fto.getByRole("button", { name: "Guardar lugar" }).click();
-  await expect(fto.getByText("FTO R1", { exact: true })).toBeVisible();
+  await expect(fto.getByText("FTO", { exact: true })).toBeVisible();
   await page.reload();
   await expect(
-    page.locator("#slot-a").getByText("5BLD R2", { exact: true }),
+    page.locator("#slot-a").getByText("5BLD", { exact: true }),
   ).toBeVisible();
   expect(
     await page.evaluate(
@@ -90,7 +96,7 @@ test("mobile booking, continuation, FTO, returning name, and organizer controls"
     .fill(name.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase());
   await page.getByRole("button", { name: "Elegir mis Slots" }).click();
   await expect(
-    page.locator("#slot-a").getByText("5BLD R2", { exact: true }),
+    page.locator("#slot-a").getByText("5BLD", { exact: true }),
   ).toBeVisible();
 
   const adminContext = await browser.newContext({
@@ -103,6 +109,9 @@ test("mobile booking, continuation, FTO, returning name, and organizer controls"
   await expect(
     admin.getByRole("heading", { name: "Todos los horarios" }),
   ).toBeVisible();
+  await admin.getByLabel("Máximo de Slots por competidor").fill("6");
+  await admin.getByRole("button", { name: "Guardar límite" }).click();
+  await expect(admin.getByText("Límite actualizado.")).toBeVisible();
   await admin.getByLabel("Capacidad de Slot A").fill("0");
   await admin
     .locator(".capacity-card")
@@ -121,9 +130,9 @@ test("mobile booking, continuation, FTO, returning name, and organizer controls"
   await personal
     .getByRole("combobox", { name: "Evento", exact: true })
     .selectOption("222");
-  await personal.getByRole("radio", { name: "Ronda 1" }).check();
+  await expect(personal.getByRole("radio")).toHaveCount(0);
   await personal.getByRole("button", { name: "Guardar lugar" }).click();
-  await expect(personal.getByText("2x2 R1", { exact: true })).toBeVisible();
+  await expect(personal.getByText("2x2", { exact: true })).toBeVisible();
   await admin.screenshot({
     path: "test-results/admin-desktop.png",
     fullPage: true,
@@ -146,7 +155,7 @@ test("mobile booking, continuation, FTO, returning name, and organizer controls"
   await personal
     .getByRole("button", { name: "Sí, liberar", exact: true })
     .click();
-  await expect(personal.getByText("2x2 R1", { exact: true })).toHaveCount(0);
+  await expect(personal.getByText("2x2", { exact: true })).toHaveCount(0);
   await admin
     .getByRole("button", { name: "Abrir reservas", exact: true })
     .click();

@@ -71,7 +71,7 @@ export async function handle(request: Request): Promise<Response> {
     }
     if (body.action === "logout")
       return json({ ok: true }, 200, { "Set-Cookie": clearAdminCookie() });
-    const adminActions = ["capacity", "lock", "importWca", "importRoster"];
+    const adminActions = ["capacity", "limit", "lock", "importWca", "importRoster"];
     if (
       (adminActions.includes(String(body.action)) || body.asAdmin === true) &&
       !admin
@@ -88,6 +88,9 @@ export async function handle(request: Request): Promise<Response> {
         break;
       case "capacity":
         await service.capacity(body.slotId, body.capacity);
+        break;
+      case "limit":
+        await service.limit(body.maxSlots);
         break;
       case "lock":
         await service.lock(body.locked);
@@ -137,6 +140,8 @@ export async function handle(request: Request): Promise<Response> {
         { error: error.message, code: error.code },
         ["SLOT_FULL", "LOCKED"].includes(error.code) ? 409 : 400,
       );
+    if (error instanceof Error && error.message === "BOOKING_LIMIT")
+      return json({ error: "Ya alcanzaste el límite de Slots garantizados. Podés cambiar o liberar tus reservas, o esperar a que organización habilite más lugares.", code: "BOOKING_LIMIT" }, 409);
     if (error instanceof Error && error.message === "SLOT_FULL")
       return json(
         {

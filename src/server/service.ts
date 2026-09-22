@@ -51,6 +51,7 @@ export class Planner {
       `SELECT json_build_object(
       'events', (SELECT coalesce(json_agg(e ORDER BY position), '[]') FROM planner.events e),
       'locked', (SELECT locked FROM planner.settings WHERE id=true),
+      'maxSlots', (SELECT max_slots FROM planner.settings WHERE id=true),
       'competitor', (SELECT json_build_object('id',id,'name',name,'wcaId',wca_id) FROM planner.competitors WHERE id=$1),
       'slots', (SELECT coalesce(json_agg(s ORDER BY s."startsAt"), '[]') FROM (
         SELECT id, label, starts_at AS "startsAt", capacity,
@@ -75,6 +76,8 @@ export class Planner {
       );
       if (settings.rows[0].locked && !admin)
         throw new BookingError("LOCKED", "Las reservas están cerradas.");
+      const person = await client.query("SELECT id FROM planner.competitors WHERE id=$1 FOR UPDATE", [competitorId]);
+      if (!person.rowCount) throw new BookingError("INVALID_PERSON", "Volvé a ingresar tu nombre.");
       const slot = await client.query(
         "SELECT capacity FROM planner.slots WHERE id=$1 FOR UPDATE",
         [input.slotId],
@@ -84,15 +87,6 @@ export class Planner {
           "INVALID_SLOT",
           "Este Slot ya no existe. Actualizá la página.",
         );
-      if (
-        !(
-          await client.query("SELECT id FROM planner.competitors WHERE id=$1", [
-            competitorId,
-          ])
-        ).rowCount
-      ) {
-        throw new BookingError("INVALID_PERSON", "Volvé a ingresar tu nombre.");
-      }
       const existing = await client.query(
         "SELECT competitor_id FROM planner.bookings WHERE slot_id=$1",
         [input.slotId],
@@ -102,7 +96,7 @@ export class Planner {
       );
       const booking = validateBooking({
         eventId: input.eventId,
-        round: input.round,
+        round: input.round ?? 1,
         events: events.rows,
         capacity: slot.rows[0].capacity,
         occupancy: existing.rowCount!,
@@ -127,6 +121,7 @@ export class Planner {
       );
       if (settings.rows[0].locked && !admin)
         throw new BookingError("LOCKED", "Las reservas están cerradas.");
+      await client.query("SELECT id FROM planner.competitors WHERE id=$1 FOR UPDATE", [competitorId]);
       await client.query(
         "SELECT id FROM planner.slots WHERE id=$1 FOR UPDATE",
         [input.slotId],
@@ -152,6 +147,11 @@ export class Planner {
     );
     if (!result.rowCount)
       throw new BookingError("INVALID_SLOT", "Este Slot ya no existe.");
+  }
+  async limit(value: unknown): Promise<void> {
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 2147483647)
+      throw new BookingError("INVALID_LIMIT", "El límite debe ser un número entero mayor o igual a cero (hasta 2147483647).");
+    await this.pool.query("UPDATE planner.settings SET max_slots=$1 WHERE id=true", [value]);
   }
   async lock(value: unknown): Promise<void> {
     if (typeof value !== "boolean")

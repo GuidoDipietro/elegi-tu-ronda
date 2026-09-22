@@ -28,7 +28,7 @@ export function scheduleCsv(state: AdminState): string {
           (b) => b.competitorId === person.id && b.slotId === slot.id,
         );
         return booking
-          ? `${state.events.find((e) => e.id === booking.eventId)?.label || booking.eventId} R${booking.round}`
+          ? `${state.events.find((e) => e.id === booking.eventId)?.label || booking.eventId}`
           : "";
       }),
     ]),

@@ -19,6 +19,7 @@ test("exports a full competitor matrix including empty cells", () => {
       .slice(0, 2)
       .map((s) => ({ ...s, occupancy: 1, booking: null })),
     locked: false,
+    maxSlots: 2,
     competitor: null,
     competitors: [{ id: "a", name: "Alex", wcaId: null }],
     bookings: [
@@ -26,5 +27,5 @@ test("exports a full competitor matrix including empty cells", () => {
     ],
   });
   assert.ok(csv.startsWith('\uFEFF"Competidor","WCA ID","15:30","16:00"'));
-  assert.ok(csv.includes('"Alex","","5BLD R2",""'));
+  assert.ok(csv.includes('"Alex","","5BLD",""'));
 });

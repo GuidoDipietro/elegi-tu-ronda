@@ -17,6 +17,7 @@ export interface PlannerState {
   slots: SlotView[];
   competitor: Competitor | null;
   locked: boolean;
+  maxSlots: number;
 }
 export interface AdminState extends PlannerState {
   competitors: Competitor[];
