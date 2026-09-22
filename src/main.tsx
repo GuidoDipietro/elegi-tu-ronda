@@ -342,11 +342,16 @@ function LimitForm({
 function App() {
   const adminPage =
     location.pathname === "/admin" || location.pathname === "/admin/";
-  const [loginError] = useState(() => {
-    const reason = new URLSearchParams(location.search).get("loginError") || "";
-    if (reason) history.replaceState(null, "", location.pathname);
-    return reason;
-  });
+  const [loginError, setLoginError] = useState(
+    () => new URLSearchParams(location.search).get("loginError") || "",
+  );
+  useEffect(() => {
+    const url = new URL(location.href);
+    if (url.searchParams.has("loginError")) {
+      url.searchParams.delete("loginError");
+      history.replaceState(null, "", url.pathname + url.search + url.hash);
+    }
+  }, []);
   const [state, setState] = useState<PlannerState | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -358,6 +363,7 @@ function App() {
       const next = await api<PlannerState>();
       if (request !== revision.current) return;
       setState(next);
+      if (next.competitor) setLoginError("");
       setError("");
     } catch (e) {
       if (request === revision.current) setError((e as Error).message);
@@ -461,13 +467,20 @@ function App() {
             <div className="notice error" role="alert">
               {loginError === "not_registered" ? (
                 <>
-                  Tu inscripción en Elegí Tu Ronda todavía no está aceptada.
-                  Para reservar Slots necesitás estar inscripto y aceptado.{" "}
+                  WCA todavía no nos informa una inscripción aceptada para tu
+                  cuenta. Para reservar Slots necesitás estar inscripto y
+                  aceptado.{" "}
                   <a href={`${competition.url}/register`}>
                     Inscribite en la competencia en WCA
                   </a>
-                  . Si ya te inscribiste, esperá la confirmación de
-                  organización.
+                  . Si organización acaba de aceptarte, la lista de WCA puede
+                  tardar hasta 5 minutos en actualizarse. Después, volvé a
+                  ingresar con la misma cuenta que usaste para inscribirte.
+                  <p>
+                    <a href="/api/planner?action=wcaLogin">
+                      Volver a comprobar mi inscripción con WCA →
+                    </a>
+                  </p>
                 </>
               ) : loginError === "denied" ? (
                 "Cancelaste el ingreso con WCA. Podés intentarlo de nuevo."
@@ -827,8 +840,8 @@ function Admin() {
         <>
           <div className="admin-toolbar">
             <div className="stats">
-              <b>{state.competitors.length}</b> personas <span>·</span>{" "}
-              <b>{state.bookings.length}</b> reservas
+              <b>{state.competitors.length}</b> personas en esta app{" "}
+              <span>·</span> <b>{state.bookings.length}</b> reservas
             </div>
             <div className="actions">
               <button disabled={busy} onClick={exportCsv}>
@@ -993,8 +1006,9 @@ function Admin() {
               </table>
               {!state.competitors.length && (
                 <p className="empty">
-                  Todavía no hay competidores. Importá el roster o agregá un
-                  nombre abajo.
+                  Todavía no hay competidores en esta app. Aparecen al ingresar
+                  con WCA por primera vez, o al importar la lista de inscriptos.
+                  Importar no es necesario para que puedan ingresar.
                 </p>
               )}
             </div>

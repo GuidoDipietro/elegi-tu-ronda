@@ -51,24 +51,22 @@ test("mobile authenticated booking, waves, logout, and organizer controls", asyn
   });
   async function signInAs(id: string) {
     const cookie = await createCompetitorSession(pool, id);
-    await page
-      .context()
-      .addCookies([
-        {
-          name: "ronda_competitor",
-          value: cookieValue(cookie, "ronda_competitor")!,
-          url: "http://127.0.0.1:5173",
-          httpOnly: true,
-          sameSite: "Lax",
-        },
-      ]);
+    await page.context().addCookies([
+      {
+        name: "ronda_competitor",
+        value: cookieValue(cookie, "ronda_competitor")!,
+        url: "http://127.0.0.1:5173",
+        httpOnly: true,
+        sameSite: "Lax",
+      },
+    ]);
     await page.goto("/");
   }
   try {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/?loginError=not_registered");
     await expect(page.getByRole("alert")).toContainText(
-      "todavía no está aceptada",
+      "WCA todavía no nos informa una inscripción aceptada",
     );
     await expect(
       page.getByRole("link", { name: "Inscribite en la competencia en WCA" }),
@@ -77,8 +75,15 @@ test("mobile authenticated booking, waves, logout, and organizer controls", asyn
       "https://www.worldcubeassociation.org/competitions/ElegiTuRondaBA2026/register",
     );
     await expect(page.getByLabel("Nombre y apellido o WCA ID")).toHaveCount(0);
+    await expect(page.getByRole("alert")).toContainText("hasta 5 minutos");
+    await expect(
+      page.getByRole("link", {
+        name: "Volver a comprobar mi inscripción con WCA",
+      }),
+    ).toHaveAttribute("href", "/api/planner?action=wcaLogin");
     await signInAs(person.id);
     await expect(page.getByRole("heading", { name })).toBeVisible();
+    await expect(page.getByRole("alert")).toHaveCount(0);
     for (const id of ["slot-a", "slot-b"]) {
       const slot = page.locator(`#${id}`);
       await slot.getByRole("button", { name: "Elegir evento" }).click();

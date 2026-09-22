@@ -628,6 +628,31 @@ test("OAuth validates state, consumes it once, checks accepted registration, and
       .some((c) => c.startsWith("ronda_competitor=")),
     false,
   );
+  // Registration acceptance must be picked up on a fresh login without importing a roster.
+  accepted = true;
+  const retry = await start();
+  const recovered = await callback(retry.state, retry.cookie);
+  assert.equal(recovered.headers.get("location"), "/");
+  const recoveredCookie = recovered.headers
+    .getSetCookie()
+    .find((c) => c.startsWith("ronda_competitor="))!;
+  assert.ok(recoveredCookie);
+  const recoveredState = await (
+    await handle(
+      new Request("https://example.test/api/planner", {
+        headers: { cookie: recoveredCookie },
+      }),
+    )
+  ).json();
+  assert.equal(recoveredState.competitor.id, state.competitor.id);
+  assert.equal(
+    (
+      await pool.query(
+        "SELECT count(*)::int AS count FROM planner.competitors WHERE wca_user_id=800",
+      )
+    ).rows[0].count,
+    1,
+  );
   const expired = await start();
   await pool.query(
     "UPDATE planner.oauth_states SET expires_at=now()-interval '1 second'",

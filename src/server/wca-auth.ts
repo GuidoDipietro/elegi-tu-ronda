@@ -141,7 +141,12 @@ export async function finishWcaLogin(
   {
     const rosterResponse = await fetch(
       `${wcaOrigin}/api/v0/competitions/${competition.id}/wcif/public`,
-      { redirect: "error", signal: AbortSignal.timeout(10_000) },
+      {
+        redirect: "error",
+        signal: AbortSignal.timeout(10_000),
+        // Avoid adding an app-side cache; WCA itself caches public WCIF for up to 5 minutes.
+        cache: "no-store",
+      },
     );
     if (!rosterResponse.ok) throw new WcaLoginError("unavailable");
     const roster = await rosterResponse.json();
