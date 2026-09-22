@@ -97,7 +97,10 @@ export function requireId(value: unknown): string {
       value,
     )
   ) {
-    throw new BookingError("INVALID_PERSON", "Volvé a ingresar tu nombre.");
+    throw new BookingError(
+      "INVALID_PERSON",
+      "No pudimos identificar al competidor. Actualizá la página e intentá de nuevo.",
+    );
   }
   return value;
 }

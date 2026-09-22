@@ -17,9 +17,13 @@ export default defineConfig({
       : {},
   },
   webServer: {
-    command: "npm run dev",
+    command: "npx tsx --env-file-if-exists=.env tests/e2e/server.ts",
     url: "http://127.0.0.1:5173",
     reuseExistingServer: false,
-    env: { DATABASE_URL: connection, ADMIN_PASSWORD: "browser-test-password" },
+    env: {
+      DATABASE_URL: connection,
+      TEST_DATABASE_URL: connection,
+      ADMIN_PASSWORD: "browser-test-password",
+    },
   },
 });

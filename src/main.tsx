@@ -164,7 +164,7 @@ function SlotCard({
           {booking
             ? "Tu lugar ✓"
             : over
-              ? "Sobreocupado"
+              ? "Cupo excedido"
               : full
                 ? "Completo"
                 : `${slot.capacity - slot.occupancy} ${slot.capacity - slot.occupancy === 1 ? "libre" : "libres"}`}
@@ -257,7 +257,7 @@ function SlotCard({
             : locked
               ? "Reservas cerradas"
               : !enabled
-                ? "Ingresá con WCA para elegir"
+                ? "Ingresá con tu cuenta de la WCA para elegir"
                 : limitReached
                   ? "Límite de Slots alcanzado"
                   : "＋ Elegir evento"}
@@ -420,6 +420,7 @@ function App() {
     }
   }
   const bookings = state?.slots.filter((slot) => slot.booking) || [];
+  const remainingSlots = Math.max(0, (state?.maxSlots ?? 0) - bookings.length);
   return (
     <>
       <Header admin={adminPage} />
@@ -467,29 +468,30 @@ function App() {
             <div className="notice error" role="alert">
               {loginError === "not_registered" ? (
                 <>
-                  WCA todavía no nos informa una inscripción aceptada para tu
+                  Todavía no figura una inscripción aceptada en la WCA para tu
                   cuenta. Para reservar Slots necesitás estar inscripto y
                   aceptado.{" "}
                   <a href={`${competition.url}/register`}>
-                    Inscribite en la competencia en WCA
+                    Inscribite en la página de la WCA
                   </a>
-                  . Si organización acaba de aceptarte, la lista de WCA puede
-                  tardar hasta 5 minutos en actualizarse. Después, volvé a
-                  ingresar con la misma cuenta que usaste para inscribirte.
+                  . Si la organización acaba de aceptar tu inscripción, la lista
+                  de la WCA puede tardar hasta 5 minutos en actualizarse.
+                  Después, volvé a ingresar con la misma cuenta que usaste para
+                  inscribirte.
                   <p>
                     <a href="/api/planner?action=wcaLogin">
-                      Volver a comprobar mi inscripción con WCA →
+                      Volver a verificar mi inscripción →
                     </a>
                   </p>
                 </>
               ) : loginError === "denied" ? (
-                "Cancelaste el ingreso con WCA. Podés intentarlo de nuevo."
+                "Cancelaste el ingreso con tu cuenta de la WCA. Podés intentarlo de nuevo."
               ) : loginError === "account_conflict" ? (
-                "No pudimos vincular tus reservas. Pedile a organización que revise tu cuenta WCA."
+                "No pudimos vincular tus reservas. Pedile a la organización que revise la vinculación con tu cuenta de la WCA."
               ) : loginError === "configuration" ? (
-                "El ingreso con WCA todavía no está configurado. Avisale a organización."
+                "El ingreso con tu cuenta de la WCA todavía no está habilitado. Avisale a la organización."
               ) : (
-                "No pudimos completar el ingreso con WCA. Volvé a intentarlo."
+                "No pudimos iniciar sesión con tu cuenta de la WCA. Volvé a intentarlo."
               )}
             </div>
           )}
@@ -508,18 +510,18 @@ function App() {
             <section className="identity">
               <div>
                 <span className="eyebrow">PRIMERO, VOS</span>
-                <h2>Ingresá con tu cuenta WCA</h2>
+                <h2>Ingresá con tu cuenta de la WCA</h2>
                 <p>
-                  Usamos tu nombre de WCA para guardar tus Slots. Necesitás una
-                  inscripción aceptada en esta competencia.
+                  Tus reservas se guardan con el nombre de tu cuenta de la WCA.
+                  Necesitás una inscripción aceptada en esta competencia.
                 </p>
               </div>
               {state.wcaLoginAvailable ? (
                 <a className="primary" href="/api/planner?action=wcaLogin">
-                  Ingresar con WCA →
+                  Ingresar con mi cuenta de la WCA →
                 </a>
               ) : (
-                <Notice message="El ingreso con WCA estará disponible en breve. Podés consultar los cupos." />
+                <Notice message="Pronto vas a poder ingresar con tu cuenta de la WCA. Mientras tanto, podés consultar los cupos." />
               )}
             </section>
           )}
@@ -540,11 +542,11 @@ function App() {
           )}
           {state?.competitor && (
             <Notice
-              message={`Podés elegir hasta ${Math.max(0, state.maxSlots - bookings.length)} Slots garantizados más. Límite actual: ${state.maxSlots} por persona. Organización habilitará más lugares por etapas.`}
+              message={`${remainingSlots === 0 ? "Por ahora no tenés más Slots garantizados disponibles." : `Podés reservar hasta ${remainingSlots} ${remainingSlots === 1 ? "Slot garantizado más" : "Slots garantizados más"}.`} Límite actual: ${state.maxSlots} por persona. La organización irá habilitando más lugares.`}
             />
           )}
           {state?.locked && (
-            <Notice message="Las reservas están cerradas. Podés consultar tu horario; para cambiarlo, hablá con organización." />
+            <Notice message="Las reservas están cerradas. Podés consultar tu horario; para cambiarlo, hablá con la organización." />
           )}
           {bookings.length > 0 && (
             <section className="my-schedule">
@@ -619,8 +621,8 @@ function App() {
             <div>
               <h3>¿Necesitás más tiempo?</h3>
               <p>
-                Podés elegir el mismo evento y ronda en varios Slots para
-                continuar. En cada Slot, reservá un solo evento. El día de la
+                Si un Slot no te alcanza, podés reservar otro para el mismo
+                evento. En cada Slot, reservá un solo evento. El día de la
                 competencia se define si continuás una ronda o empezás la
                 siguiente.
               </p>
@@ -667,7 +669,7 @@ function CapacityForm({
         <span>
           {slot.occupancy} / {slot.capacity} lugares
           {slot.occupancy > slot.capacity
-            ? " · Sobreocupado"
+            ? " · Cupo excedido"
             : slot.occupancy >= slot.capacity
               ? " · Completo"
               : slot.occupancy >= slot.capacity * 0.8
@@ -815,7 +817,7 @@ function Admin() {
       <Notice message={message} />
       {login ? (
         <form className="login-panel" onSubmit={signIn}>
-          <h2>Acceso de organización</h2>
+          <h2>Acceso para la organización</h2>
           <label>
             Contraseña
             <input
@@ -833,7 +835,7 @@ function Admin() {
         </form>
       ) : !state ? (
         <div className="loading">
-          <p>Cargando organización…</p>
+          <p>Cargando el panel de la organización…</p>
           {error && <button onClick={() => void load()}>Reintentar</button>}
         </div>
       ) : (
@@ -854,7 +856,7 @@ function Admin() {
                     { action: "lock", locked: !state.locked },
                     state.locked
                       ? "Reservas abiertas."
-                      : "Reservas cerradas. Organización puede seguir editando.",
+                      : "Reservas cerradas. La organización puede seguir modificando las reservas.",
                   )
                 }
               >
@@ -872,7 +874,7 @@ function Admin() {
             </div>
           </div>
           {state.locked && (
-            <Notice message="Reservas cerradas para competidores. Organización puede seguir editando." />
+            <Notice message="Reservas cerradas para competidores. La organización puede seguir modificando las reservas." />
           )}
           <section>
             <h2>Slots garantizados por competidor</h2>
@@ -1007,8 +1009,9 @@ function Admin() {
               {!state.competitors.length && (
                 <p className="empty">
                   Todavía no hay competidores en esta app. Aparecen al ingresar
-                  con WCA por primera vez, o al importar la lista de inscriptos.
-                  Importar no es necesario para que puedan ingresar.
+                  con su cuenta de la WCA por primera vez, o al importar la
+                  lista de inscriptos. Importar no es necesario para que puedan
+                  ingresar.
                 </p>
               )}
             </div>
@@ -1069,9 +1072,10 @@ function Admin() {
           <details className="roster-tools">
             <summary>Importar competidores</summary>
             <p>
-              Agrega los inscriptos aceptados sin borrar reservas. Todos pueden
-              elegir cualquier evento. Los competidores ingresan con WCA;
-              organización puede agregar personas manualmente.
+              Importá la lista de inscriptos aceptados sin borrar las reservas.
+              Todos pueden elegir cualquier evento. Los competidores ingresan
+              con su cuenta de la WCA; la organización puede agregar personas
+              manualmente.
             </p>
             <div className="actions">
               <button
@@ -1079,11 +1083,11 @@ function Admin() {
                 onClick={() =>
                   void action(
                     { action: "importWca" },
-                    "Roster de WCA importado.",
+                    "Se importó la lista de inscriptos de la WCA.",
                   )
                 }
               >
-                Importar desde WCA
+                Importar desde la WCA
               </button>
               <label className="file-label">
                 Importar JSON
@@ -1103,7 +1107,7 @@ function Admin() {
                           action: "importRoster",
                           records: JSON.parse(await file.text()),
                         },
-                        "Roster importado.",
+                        "Se importó la lista de competidores.",
                       );
                     } catch (err) {
                       setError((err as Error).message);

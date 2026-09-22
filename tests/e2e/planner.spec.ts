@@ -5,7 +5,7 @@ import {
   createCompetitorSession,
   cookieValue,
 } from "../../src/server/wca-auth.ts";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 
 test("mobile authenticated booking, waves, logout, and organizer controls", async ({
   page,
@@ -66,10 +66,10 @@ test("mobile authenticated booking, waves, logout, and organizer controls", asyn
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/?loginError=not_registered");
     await expect(page.getByRole("alert")).toContainText(
-      "WCA todavía no nos informa una inscripción aceptada",
+      "Todavía no figura una inscripción aceptada en la WCA",
     );
     await expect(
-      page.getByRole("link", { name: "Inscribite en la competencia en WCA" }),
+      page.getByRole("link", { name: "Inscribite en la página de la WCA" }),
     ).toHaveAttribute(
       "href",
       "https://www.worldcubeassociation.org/competitions/ElegiTuRondaBA2026/register",
@@ -78,7 +78,7 @@ test("mobile authenticated booking, waves, logout, and organizer controls", asyn
     await expect(page.getByRole("alert")).toContainText("hasta 5 minutos");
     await expect(
       page.getByRole("link", {
-        name: "Volver a comprobar mi inscripción con WCA",
+        name: "Volver a verificar mi inscripción",
       }),
     ).toHaveAttribute("href", "/api/planner?action=wcaLogin");
     await signInAs(person.id);
@@ -93,14 +93,23 @@ test("mobile authenticated booking, waves, logout, and organizer controls", asyn
       await expect(slot.getByRole("radio")).toHaveCount(0);
       await slot.getByRole("button", { name: "Guardar lugar" }).click();
       await expect(slot.getByText("5BLD", { exact: true })).toBeVisible();
+      if (id === "slot-a")
+        await expect(
+          page.getByText("Podés reservar hasta 1 Slot garantizado más.", {
+            exact: false,
+          }),
+        ).toBeVisible();
     }
     await expect(
       page.locator("#slot-a").getByText("También en otro Slot"),
     ).toBeVisible();
     await expect(
-      page.getByText("Podés elegir hasta 0 Slots garantizados más.", {
-        exact: false,
-      }),
+      page.getByText(
+        "Por ahora no tenés más Slots garantizados disponibles.",
+        {
+          exact: false,
+        },
+      ),
     ).toBeVisible();
     await expect(
       page
@@ -110,7 +119,7 @@ test("mobile authenticated booking, waves, logout, and organizer controls", asyn
     await api.post("/api/planner", { data: { action: "limit", maxSlots: 4 } });
     await page.reload();
     await expect(
-      page.getByText("Podés elegir hasta 2 Slots garantizados más.", {
+      page.getByText("Podés reservar hasta 2 Slots garantizados más.", {
         exact: false,
       }),
     ).toBeVisible();
@@ -142,7 +151,7 @@ test("mobile authenticated booking, waves, logout, and organizer controls", asyn
       .getByRole("button", { name: "Cerrar sesión", exact: true })
       .click();
     await expect(
-      page.getByRole("heading", { name: "Ingresá con tu cuenta WCA" }),
+      page.getByRole("heading", { name: "Ingresá con tu cuenta de la WCA" }),
     ).toBeVisible();
     // Old localStorage identities must not restore authorization.
     await page.evaluate(
@@ -151,7 +160,7 @@ test("mobile authenticated booking, waves, logout, and organizer controls", asyn
     );
     await page.reload();
     await expect(
-      page.getByRole("heading", { name: "Ingresá con tu cuenta WCA" }),
+      page.getByRole("heading", { name: "Ingresá con tu cuenta de la WCA" }),
     ).toBeVisible();
     const other = await service.identifyWca({
       id: accountId + 1,
@@ -177,6 +186,40 @@ test("mobile authenticated booking, waves, logout, and organizer controls", asyn
     await expect(
       admin.getByRole("heading", { name: "Todos los horarios" }),
     ).toBeVisible();
+    await admin.getByText("Importar competidores", { exact: true }).click();
+    await admin.getByRole("button", { name: "Importar desde la WCA" }).click();
+    await expect(admin.getByRole("status")).toContainText(
+      "Se importó la lista de inscriptos de la WCA.",
+    );
+    await admin
+      .getByLabel("Importar JSON")
+      .setInputFiles({
+        name: "competidores.json",
+        mimeType: "application/json",
+        buffer: Buffer.from(
+          JSON.stringify([
+            {
+              name: "Persona Importada JSON",
+              wcaId: "2026TEST09",
+              wcaUserId: 990009,
+            },
+          ]),
+        ),
+      });
+    await expect(admin.getByRole("status")).toContainText(
+      "Se importó la lista de competidores.",
+    );
+    await expect(
+      admin
+        .getByRole("rowheader")
+        .getByRole("button", { name: /Persona Importada JSON/ }),
+    ).toBeVisible();
+    const downloadPromise = admin.waitForEvent("download");
+    await admin.getByRole("button", { name: "Exportar CSV" }).click();
+    const csv = await readFile((await (await downloadPromise).path())!, "utf8");
+    expect(csv).toContain(name);
+    expect(csv).toContain('"5BLD"');
+    expect(csv).not.toMatch(/(?:5BLD|FTO) R[12]/);
     await admin.getByLabel("Máximo de Slots por competidor").fill("6");
     await admin.getByRole("button", { name: "Guardar límite" }).click();
     await expect(admin.getByText("Límite actualizado.")).toBeVisible();
@@ -188,7 +231,7 @@ test("mobile authenticated booking, waves, logout, and organizer controls", asyn
       .click();
     await expect(
       admin.locator(".capacity-card").filter({ hasText: "Slot A" }),
-    ).toContainText("Sobreocupado");
+    ).toContainText("Cupo excedido");
     await admin
       .getByRole("rowheader")
       .getByRole("button", { name: new RegExp(name) })
@@ -231,7 +274,7 @@ test("mobile authenticated booking, waves, logout, and organizer controls", asyn
       .click();
     await admin.getByRole("button", { name: "Salir", exact: true }).click();
     await expect(
-      admin.getByRole("heading", { name: "Acceso de organización" }),
+      admin.getByRole("heading", { name: "Acceso para la organización" }),
     ).toBeVisible();
     await adminContext.close();
   } finally {

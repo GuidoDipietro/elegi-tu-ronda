@@ -73,9 +73,12 @@ export async function handle(request: Request): Promise<Response> {
         return new Response(null, { status: 302, headers });
       }
       if (action === "admin" && !admin)
-        return json({ error: "Ingresá la contraseña de organización." }, 401);
+        return json(
+          { error: "Ingresá la contraseña de la organización." },
+          401,
+        );
       if (action && action !== "admin")
-        return json({ error: "Acción inválida." }, 400);
+        return json({ error: "La acción solicitada no es válida." }, 400);
       const personId =
         action === "admin"
           ? null
@@ -101,7 +104,7 @@ export async function handle(request: Request): Promise<Response> {
         ?.toLowerCase()
         .startsWith("application/json")
     )
-      return json({ error: "Usá JSON." }, 415);
+      return json({ error: "Enviá la solicitud en formato JSON." }, 415);
     const raw = await request.text();
     if (raw.length > 200_000)
       return json({ error: "Archivo demasiado grande." }, 413);
@@ -109,7 +112,10 @@ export async function handle(request: Request): Promise<Response> {
     try {
       body = JSON.parse(raw);
     } catch {
-      return json({ error: "JSON inválido." }, 400);
+      return json(
+        { error: "El contenido no tiene un formato JSON válido." },
+        400,
+      );
     }
     if (!body || typeof body !== "object" || Array.isArray(body))
       return json({ error: "Solicitud inválida." }, 400);
@@ -151,7 +157,7 @@ export async function handle(request: Request): Promise<Response> {
       if (!personId)
         return json(
           {
-            error: "Ingresá con WCA para reservar tus Slots.",
+            error: "Ingresá con tu cuenta de la WCA para reservar tus Slots.",
             code: "LOGIN_REQUIRED",
           },
           401,
@@ -193,13 +199,19 @@ export async function handle(request: Request): Promise<Response> {
         );
         if (!response.ok)
           return json(
-            { error: "No se pudo leer WCA. Podés importar JSON." },
+            {
+              error:
+                "No pudimos consultar la lista de inscriptos de la WCA. Podés importar un archivo JSON.",
+            },
             502,
           );
         const wcif = await response.json();
         if (!Array.isArray(wcif.persons))
           return json(
-            { error: "La respuesta de WCA no contiene competidores." },
+            {
+              error:
+                "La respuesta de la WCA no contiene una lista de competidores.",
+            },
             502,
           );
         return json({
@@ -223,7 +235,7 @@ export async function handle(request: Request): Promise<Response> {
         });
       }
       default:
-        return json({ error: "Acción inválida." }, 400);
+        return json({ error: "La acción solicitada no es válida." }, 400);
     }
     return json({ ok: true });
   } catch (error) {
@@ -236,7 +248,7 @@ export async function handle(request: Request): Promise<Response> {
       return json(
         {
           error:
-            "Ya alcanzaste el límite de Slots garantizados. Podés cambiar o liberar tus reservas, o esperar a que organización habilite más lugares.",
+            "Ya alcanzaste el límite de Slots garantizados. Podés cambiar o liberar tus reservas, o esperar a que la organización habilite más lugares.",
           code: "BOOKING_LIMIT",
         },
         409,

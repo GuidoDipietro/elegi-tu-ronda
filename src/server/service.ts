@@ -70,7 +70,7 @@ export class Planner {
       )
         throw new BookingError(
           "ACCOUNT_CONFLICT",
-          "Organización debe revisar la vinculación de tu cuenta WCA.",
+          "La organización tiene que revisar la vinculación con tu cuenta de la WCA.",
         );
       const result = existing.rows[0]
         ? await client.query(
@@ -124,7 +124,10 @@ export class Planner {
         [competitorId],
       );
       if (!person.rowCount)
-        throw new BookingError("INVALID_PERSON", "Volvé a ingresar tu nombre.");
+        throw new BookingError(
+          "INVALID_PERSON",
+          "No pudimos identificar al competidor. Actualizá la página e intentá de nuevo.",
+        );
       const slot = await client.query(
         "SELECT capacity FROM planner.slots WHERE id=$1 FOR UPDATE",
         [input.slotId],
@@ -238,7 +241,10 @@ export class Planner {
         wcaUserId !== null &&
         (!Number.isSafeInteger(wcaUserId) || wcaUserId <= 0)
       )
-        throw new BookingError("INVALID_ROSTER", "ID de cuenta WCA inválido.");
+        throw new BookingError(
+          "INVALID_ROSTER",
+          "El identificador de la cuenta de la WCA no es válido.",
+        );
       return { name, key, wcaId, wcaUserId };
     });
     if (new Set(roster.map((r) => r.key)).size !== roster.length)
@@ -256,7 +262,7 @@ export class Planner {
         if (existing.rowCount! > 1)
           throw new BookingError(
             "INVALID_ROSTER",
-            "Hay cuentas WCA en conflicto. Revisá las vinculaciones.",
+            "Hay cuentas de la WCA vinculadas a distintas personas. Revisá las vinculaciones.",
           );
         if (existing.rowCount) {
           const linked = existing.rows[0];
@@ -268,7 +274,7 @@ export class Planner {
           )
             throw new BookingError(
               "INVALID_ROSTER",
-              "La cuenta WCA no coincide con la vinculación existente.",
+              "La cuenta de la WCA no coincide con la que ya está vinculada.",
             );
           await client.query(
             "UPDATE planner.competitors SET wca_user_id=coalesce(wca_user_id,$1),wca_id=coalesce(wca_id,$2) WHERE id=$3",
