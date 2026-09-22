@@ -18,6 +18,7 @@ export interface PlannerState {
   competitor: Competitor | null;
   locked: boolean;
   maxSlots: number;
+  wcaLoginAvailable?: boolean;
 }
 export interface AdminState extends PlannerState {
   competitors: Competitor[];

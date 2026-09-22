@@ -12,6 +12,17 @@ CREATE TABLE IF NOT EXISTS planner.competitors (
   name text NOT NULL CHECK (length(name) BETWEEN 2 AND 100),
   name_key text NOT NULL UNIQUE, wca_id text UNIQUE
 );
+ALTER TABLE planner.competitors ADD COLUMN IF NOT EXISTS wca_user_id bigint UNIQUE CHECK (wca_user_id > 0);
+CREATE TABLE IF NOT EXISTS planner.oauth_states (
+  state_hash text PRIMARY KEY, browser_hash text NOT NULL,
+  expires_at timestamptz NOT NULL DEFAULT (now() + interval '10 minutes')
+);
+CREATE TABLE IF NOT EXISTS planner.competitor_sessions (
+  token_hash text PRIMARY KEY,
+  competitor_id uuid NOT NULL REFERENCES planner.competitors(id) ON DELETE CASCADE,
+  expires_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS competitor_sessions_expiry ON planner.competitor_sessions(expires_at);
 CREATE TABLE IF NOT EXISTS planner.settings (
   id boolean PRIMARY KEY DEFAULT true CHECK (id), locked boolean NOT NULL DEFAULT false
 );

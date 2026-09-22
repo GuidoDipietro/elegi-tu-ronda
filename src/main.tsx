@@ -1,7 +1,7 @@
 import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { createRoot } from "react-dom/client";
-import { api, ApiError, storedPerson, storePerson } from "./client.ts";
+import { api, ApiError } from "./client.ts";
 import { competition } from "./config.ts";
 import { scheduleCsv, timeLabel } from "./format.ts";
 import type { Booking, CompetitionEvent } from "./domain.ts";
@@ -66,11 +66,9 @@ function Notice({
 function Identity({
   onIdentify,
   busy,
-  compact = false,
 }: {
   onIdentify: (name: string) => Promise<void>;
   busy: boolean;
-  compact?: boolean;
 }) {
   const [name, setName] = useState("");
   async function submit(event: FormEvent) {
@@ -78,14 +76,7 @@ function Identity({
     if (name.trim()) await onIdentify(name);
   }
   return (
-    <form className={`identity ${compact ? "compact" : ""}`} onSubmit={submit}>
-      {!compact && (
-        <div>
-          <span className="eyebrow">PRIMERO, VOS</span>
-          <h2>¿Cómo te llamás?</h2>
-          <p>Usá siempre el mismo nombre para recuperar tu horario.</p>
-        </div>
-      )}
+    <form className="identity compact" onSubmit={submit}>
       <div className="identity-fields">
         <label>
           Nombre y apellido o WCA ID
@@ -102,19 +93,9 @@ function Identity({
           />
         </label>
         <button className="primary" disabled={busy || name.trim().length < 2}>
-          {busy
-            ? "Un momento…"
-            : compact
-              ? "Ver / agregar"
-              : "Elegir mis Slots →"}
+          {busy ? "Un momento…" : "Ver / agregar"}
         </button>
       </div>
-      {!compact && (
-        <small>
-          No necesitás una cuenta. El horario se edita por nombre, sin
-          contraseña.
-        </small>
-      )}
     </form>
   );
 }
@@ -232,7 +213,12 @@ function SlotCard({
           <div className="actions">
             <button
               className="primary"
-              disabled={busy || locked || !selected || (!booking && (full || limitReached))}
+              disabled={
+                busy ||
+                locked ||
+                !selected ||
+                (!booking && (full || limitReached))
+              }
             >
               {busy ? "Guardando…" : "Guardar lugar"}
             </button>
@@ -249,9 +235,7 @@ function SlotCard({
       ) : booking ? (
         <div className="booking">
           <div>
-            <strong>
-              {bookedEvent?.label || booking.eventId}
-            </strong>
+            <strong>{bookedEvent?.label || booking.eventId}</strong>
             {continuation && <small>También en otro Slot</small>}
           </div>
           <button
@@ -273,8 +257,10 @@ function SlotCard({
             : locked
               ? "Reservas cerradas"
               : !enabled
-                ? "Ingresá tu nombre para elegir"
-                : limitReached ? "Límite de Slots alcanzado" : "＋ Elegir evento"}
+                ? "Ingresá con WCA para elegir"
+                : limitReached
+                  ? "Límite de Slots alcanzado"
+                  : "＋ Elegir evento"}
         </button>
       )}
       {booking && !editing && enabled && !locked && (
@@ -313,17 +299,54 @@ function SlotCard({
     </article>
   );
 }
-function LimitForm({ value, busy, onSave }: { value: number; busy: boolean; onSave: (value: number) => Promise<boolean> }) {
+function LimitForm({
+  value,
+  busy,
+  onSave,
+}: {
+  value: number;
+  busy: boolean;
+  onSave: (value: number) => Promise<boolean>;
+}) {
   const [limit, setLimit] = useState(String(value));
-  return <form className="identity-fields" onSubmit={(e) => { e.preventDefault(); void onSave(Number(limit)); }}>
-    <label>Máximo de Slots por competidor<input type="number" min="0" max="2147483647" step="1" required value={limit} disabled={busy} onChange={(e) => setLimit(e.target.value)} /></label>
-    <button className="primary" disabled={busy || limit === "" || Number(limit) === value}>Guardar límite</button>
-  </form>;
+  return (
+    <form
+      className="identity-fields"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void onSave(Number(limit));
+      }}
+    >
+      <label>
+        Máximo de Slots por competidor
+        <input
+          type="number"
+          min="0"
+          max="2147483647"
+          step="1"
+          required
+          value={limit}
+          disabled={busy}
+          onChange={(e) => setLimit(e.target.value)}
+        />
+      </label>
+      <button
+        className="primary"
+        disabled={busy || limit === "" || Number(limit) === value}
+      >
+        Guardar límite
+      </button>
+    </form>
+  );
 }
 function App() {
   const adminPage =
     location.pathname === "/admin" || location.pathname === "/admin/";
-  const [personId, setPersonId] = useState(storedPerson);
+  const [loginError] = useState(() => {
+    const reason = new URLSearchParams(location.search).get("loginError") || "";
+    if (reason) history.replaceState(null, "", location.pathname);
+    return reason;
+  });
   const [state, setState] = useState<PlannerState | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -332,20 +355,14 @@ function App() {
   const load = useCallback(async () => {
     const request = ++revision.current;
     try {
-      const next = await api<PlannerState>(
-        personId ? `?competitorId=${encodeURIComponent(personId)}` : "",
-      );
+      const next = await api<PlannerState>();
       if (request !== revision.current) return;
       setState(next);
-      if (personId && !next.competitor) {
-        storePerson("");
-        setPersonId("");
-      }
       setError("");
     } catch (e) {
       if (request === revision.current) setError((e as Error).message);
     }
-  }, [personId]);
+  }, []);
   useEffect(() => {
     if (adminPage) return;
     void load();
@@ -362,30 +379,25 @@ function App() {
       window.removeEventListener("focus", focus);
     };
   }, [adminPage, load]);
-  async function identify(name: string) {
+  async function signOut() {
     setBusy(true);
-    setError("");
-    setMessage("");
     try {
-      const person = await api<Competitor>("", { action: "identify", name });
-      storePerson(person.id);
-      setPersonId(person.id);
+      await api("", { action: "competitorLogout" });
+      setState(null);
+      setMessage("");
+      await load();
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setBusy(false);
     }
   }
-  async function mutate(
-    action: string,
-    slotId: string,
-    eventId?: string,
-  ) {
+  async function mutate(action: string, slotId: string, eventId?: string) {
     setBusy(true);
     setError("");
     setMessage("");
     try {
-      await api("", { action, competitorId: personId, slotId, eventId });
+      await api("", { action, slotId, eventId });
       await load();
       setMessage(
         action === "save"
@@ -435,8 +447,9 @@ function App() {
               )}
             </h1>
             <p>
-              Armá tu horario para competir. Elegí un lugar y un evento.
-              La ronda se define el día de la competencia. Lo podés cambiar después.
+              Armá tu horario para competir. Elegí un lugar y un evento. La
+              ronda se define el día de la competencia. Lo podés cambiar
+              después.
             </p>
             <div className="facts">
               <span>◷ 20 min por Slot</span>
@@ -444,6 +457,29 @@ function App() {
               <span>↔ Podés repetir un evento</span>
             </div>
           </section>
+          {loginError && !state?.competitor && (
+            <div className="notice error" role="alert">
+              {loginError === "not_registered" ? (
+                <>
+                  Tu inscripción en Elegí Tu Ronda todavía no está aceptada.
+                  Para reservar Slots necesitás estar inscripto y aceptado.{" "}
+                  <a href={`${competition.url}/register`}>
+                    Inscribite en la competencia en WCA
+                  </a>
+                  . Si ya te inscribiste, esperá la confirmación de
+                  organización.
+                </>
+              ) : loginError === "denied" ? (
+                "Cancelaste el ingreso con WCA. Podés intentarlo de nuevo."
+              ) : loginError === "account_conflict" ? (
+                "No pudimos vincular tus reservas. Pedile a organización que revise tu cuenta WCA."
+              ) : loginError === "configuration" ? (
+                "El ingreso con WCA todavía no está configurado. Avisale a organización."
+              ) : (
+                "No pudimos completar el ingreso con WCA. Volvé a intentarlo."
+              )}
+            </div>
+          )}
           <Notice message={error} error />
           {error && (
             <button
@@ -456,7 +492,23 @@ function App() {
           )}
           <Notice message={message} />
           {state && !state.competitor && (
-            <Identity onIdentify={identify} busy={busy} />
+            <section className="identity">
+              <div>
+                <span className="eyebrow">PRIMERO, VOS</span>
+                <h2>Ingresá con tu cuenta WCA</h2>
+                <p>
+                  Usamos tu nombre de WCA para guardar tus Slots. Necesitás una
+                  inscripción aceptada en esta competencia.
+                </p>
+              </div>
+              {state.wcaLoginAvailable ? (
+                <a className="primary" href="/api/planner?action=wcaLogin">
+                  Ingresar con WCA →
+                </a>
+              ) : (
+                <Notice message="El ingreso con WCA estará disponible en breve. Podés consultar los cupos." />
+              )}
+            </section>
           )}
           {state?.competitor && (
             <section className="person-bar">
@@ -467,18 +519,17 @@ function App() {
               <button
                 className="quiet"
                 disabled={busy}
-                onClick={() => {
-                  storePerson("");
-                  setPersonId("");
-                  setState(null);
-                  setMessage("");
-                }}
+                onClick={() => void signOut()}
               >
-                Cambiar persona
+                Cerrar sesión
               </button>
             </section>
           )}
-          {state?.competitor && <Notice message={`Podés elegir hasta ${Math.max(0, state.maxSlots - bookings.length)} Slots garantizados más. Límite actual: ${state.maxSlots} por persona. Organización habilitará más lugares por etapas.`} />}
+          {state?.competitor && (
+            <Notice
+              message={`Podés elegir hasta ${Math.max(0, state.maxSlots - bookings.length)} Slots garantizados más. Límite actual: ${state.maxSlots} por persona. Organización habilitará más lugares por etapas.`}
+            />
+          )}
           {state?.locked && (
             <Notice message="Las reservas están cerradas. Podés consultar tu horario; para cambiarlo, hablá con organización." />
           )}
@@ -523,7 +574,10 @@ function App() {
             ) : (
               <div className="slots">
                 {state.slots.map((slot) => (
-                  <div id={slot.id} key={`${personId}-${slot.id}`}>
+                  <div
+                    id={slot.id}
+                    key={`${state.competitor?.id || "public"}-${slot.id}`}
+                  >
                     <SlotCard
                       slot={slot}
                       events={state.events}
@@ -531,9 +585,7 @@ function App() {
                       locked={state.locked}
                       busy={busy}
                       limitReached={bookings.length >= state.maxSlots}
-                      onSave={(id, event) =>
-                        mutate("save", id, event)
-                      }
+                      onSave={(id, event) => mutate("save", id, event)}
                       onRemove={(id) => mutate("remove", id)}
                       continuation={
                         !!slot.booking &&
@@ -555,7 +607,9 @@ function App() {
               <h3>¿Necesitás más tiempo?</h3>
               <p>
                 Podés elegir el mismo evento y ronda en varios Slots para
-                continuar. En cada Slot, reservá un solo evento. El día de la competencia se define si continuás una ronda o empezás la siguiente.
+                continuar. En cada Slot, reservá un solo evento. El día de la
+                competencia se define si continuás una ronda o empezás la
+                siguiente.
               </p>
             </div>
           </aside>
@@ -809,8 +863,19 @@ function Admin() {
           )}
           <section>
             <h2>Slots garantizados por competidor</h2>
-            <p>El límite es el total por persona. Subilo de 2 a 4, luego a 6, para habilitar más lugares por etapas. Reducirlo conserva las reservas existentes.</p>
-            <LimitForm key={state.maxSlots} value={state.maxSlots} busy={busy} onSave={(maxSlots) => action({ action: "limit", maxSlots }, "Límite actualizado.")} />
+            <p>
+              El límite es el total por persona. Subilo de 2 a 4, luego a 6,
+              para habilitar más lugares por etapas. Reducirlo conserva las
+              reservas existentes.
+            </p>
+            <LimitForm
+              key={state.maxSlots}
+              value={state.maxSlots}
+              busy={busy}
+              onSave={(maxSlots) =>
+                action({ action: "limit", maxSlots }, "Límite actualizado.")
+              }
+            />
           </section>
           <section>
             <div className="section-heading">
@@ -951,7 +1016,7 @@ function Admin() {
                 </button>
               )}
             </div>
-            <Identity compact onIdentify={identify} busy={busy} />
+            <Identity onIdentify={identify} busy={busy} />
             {person && (
               <div className="slots">
                 {selectedSlots.map((slot) => (
@@ -962,7 +1027,10 @@ function Admin() {
                       enabled
                       locked={false}
                       busy={busy}
-                      limitReached={selectedSlots.filter((s) => s.booking).length >= state.maxSlots}
+                      limitReached={
+                        selectedSlots.filter((s) => s.booking).length >=
+                        state.maxSlots
+                      }
                       onSave={(slotId, eventId) =>
                         action({
                           action: "save",
@@ -988,8 +1056,8 @@ function Admin() {
             <summary>Importar competidores</summary>
             <p>
               Agrega los inscriptos aceptados sin borrar reservas. Todos pueden
-              elegir cualquier evento. También se puede entrar directamente con
-              un nombre.
+              elegir cualquier evento. Los competidores ingresan con WCA;
+              organización puede agregar personas manualmente.
             </p>
             <div className="actions">
               <button

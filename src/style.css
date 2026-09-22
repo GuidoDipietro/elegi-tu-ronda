@@ -28,7 +28,8 @@ select,
 summary {
   touch-action: manipulation;
 }
-button {
+button,
+a.primary {
   cursor: pointer;
   border: 1px solid #ced5c8;
   border-radius: 9px;
@@ -1048,4 +1049,11 @@ td button {
     font-size: 30px;
     letter-spacing: -1.2px;
   }
+}
+
+a.primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
 }

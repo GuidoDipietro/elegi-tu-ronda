@@ -20,9 +20,10 @@ try {
           p.registration?.status === "accepted" &&
           p.registration?.isCompeting !== false,
       )
-      .map((p: { name: string; wcaId?: string }) => ({
+      .map((p: { name: string; wcaId?: string; wcaUserId?: number }) => ({
         name: p.name,
         wcaId: p.wcaId,
+        wcaUserId: p.wcaUserId,
       }));
   }
   console.log(

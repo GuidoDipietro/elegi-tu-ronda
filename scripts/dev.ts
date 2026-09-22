@@ -35,7 +35,10 @@ const vite = await createServer({
             });
             const response = await handle(request);
             res.statusCode = response.status;
-            response.headers.forEach((value, key) => res.setHeader(key, value));
+            response.headers.forEach((value, key) => {
+              if (key !== "set-cookie") res.setHeader(key, value);
+            });
+            res.setHeader("set-cookie", response.headers.getSetCookie());
             res.end(await response.text());
           } catch {
             res.statusCode = 500;

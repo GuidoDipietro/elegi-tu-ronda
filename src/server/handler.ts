@@ -1,3 +1,13 @@
+import {
+  authCookie,
+  createCompetitorSession,
+  finishWcaLogin,
+  logoutCompetitor,
+  sessionCompetitor,
+  startWcaLogin,
+  wcaConfigured,
+  WcaLoginError,
+} from "./wca-auth.js";
 import { BookingError } from "../domain.js";
 import { competition } from "../config.js";
 import {
@@ -25,16 +35,55 @@ export async function handle(request: Request): Promise<Response> {
     const service = new Planner(database());
     if (request.method === "GET") {
       const action = url.searchParams.get("action");
+      if (action === "wcaLogin") {
+        if (!wcaConfigured())
+          return new Response(null, {
+            status: 302,
+            headers: {
+              Location: "/?loginError=configuration",
+              "Cache-Control": "no-store",
+            },
+          });
+        return await startWcaLogin(database());
+      }
+      if (action === "wcaCallback") {
+        const headers = new Headers({
+          Location: "/",
+          "Cache-Control": "no-store",
+          "Referrer-Policy": "no-referrer",
+        });
+        headers.append("Set-Cookie", authCookie("ronda_oauth", "", 0));
+        try {
+          const profile = await finishWcaLogin(database(), request);
+          const person = await service.identifyWca(profile);
+          headers.append(
+            "Set-Cookie",
+            await createCompetitorSession(database(), person.id),
+          );
+        } catch (error) {
+          const reason =
+            error instanceof WcaLoginError
+              ? error.message
+              : error instanceof BookingError &&
+                  error.code === "ACCOUNT_CONFLICT"
+                ? "account_conflict"
+                : "unavailable";
+          headers.set("Location", `/?loginError=${encodeURIComponent(reason)}`);
+        }
+        return new Response(null, { status: 302, headers });
+      }
       if (action === "admin" && !admin)
         return json({ error: "Ingresá la contraseña de organización." }, 401);
       if (action && action !== "admin")
         return json({ error: "Acción inválida." }, 400);
-      return json(
-        await service.state(
-          url.searchParams.get("competitorId"),
-          action === "admin",
-        ),
-      );
+      const personId =
+        action === "admin"
+          ? null
+          : await sessionCompetitor(database(), request.headers.get("cookie"));
+      return json({
+        ...(await service.state(personId, action === "admin")),
+        wcaLoginAvailable: wcaConfigured(),
+      });
     }
     if (request.method !== "POST")
       return json({ error: "Método no permitido." }, 405, {
@@ -71,12 +120,52 @@ export async function handle(request: Request): Promise<Response> {
     }
     if (body.action === "logout")
       return json({ ok: true }, 200, { "Set-Cookie": clearAdminCookie() });
-    const adminActions = ["capacity", "limit", "lock", "importWca", "importRoster"];
+    const adminActions = [
+      "identify",
+      "capacity",
+      "limit",
+      "lock",
+      "importWca",
+      "importRoster",
+    ];
     if (
       (adminActions.includes(String(body.action)) || body.asAdmin === true) &&
       !admin
     )
       return json({ error: "Tu sesión terminó. Volvé a ingresar." }, 401);
+    if (body.action === "competitorLogout")
+      return json({ ok: true }, 200, {
+        "Set-Cookie": await logoutCompetitor(
+          database(),
+          request.headers.get("cookie"),
+        ),
+      });
+    if (
+      (body.action === "save" || body.action === "remove") &&
+      body.asAdmin !== true
+    ) {
+      const personId = await sessionCompetitor(
+        database(),
+        request.headers.get("cookie"),
+      );
+      if (!personId)
+        return json(
+          {
+            error: "Ingresá con WCA para reservar tus Slots.",
+            code: "LOGIN_REQUIRED",
+          },
+          401,
+        );
+      if (body.competitorId !== undefined && body.competitorId !== personId)
+        return json(
+          {
+            error: "Solo podés editar tus propias reservas.",
+            code: "FORBIDDEN",
+          },
+          403,
+        );
+      body.competitorId = personId;
+    }
     switch (body.action) {
       case "identify":
         return json(await service.identify(body.name));
@@ -123,10 +212,13 @@ export async function handle(request: Request): Promise<Response> {
                   p.registration?.status === "accepted" &&
                   p.registration?.isCompeting !== false,
               )
-              .map((p: { name: string; wcaId?: string }) => ({
-                name: p.name,
-                wcaId: p.wcaId,
-              })),
+              .map(
+                (p: { name: string; wcaId?: string; wcaUserId?: number }) => ({
+                  name: p.name,
+                  wcaId: p.wcaId,
+                  wcaUserId: p.wcaUserId,
+                }),
+              ),
           ),
         });
       }
@@ -141,7 +233,14 @@ export async function handle(request: Request): Promise<Response> {
         ["SLOT_FULL", "LOCKED"].includes(error.code) ? 409 : 400,
       );
     if (error instanceof Error && error.message === "BOOKING_LIMIT")
-      return json({ error: "Ya alcanzaste el límite de Slots garantizados. Podés cambiar o liberar tus reservas, o esperar a que organización habilite más lugares.", code: "BOOKING_LIMIT" }, 409);
+      return json(
+        {
+          error:
+            "Ya alcanzaste el límite de Slots garantizados. Podés cambiar o liberar tus reservas, o esperar a que organización habilite más lugares.",
+          code: "BOOKING_LIMIT",
+        },
+        409,
+      );
     if (error instanceof Error && error.message === "SLOT_FULL")
       return json(
         {

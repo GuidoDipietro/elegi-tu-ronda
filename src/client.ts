@@ -30,18 +30,3 @@ export async function api<T>(query = "", body?: unknown): Promise<T> {
     );
   return result;
 }
-export function storedPerson(): string {
-  try {
-    return localStorage.getItem("ronda-person") || "";
-  } catch {
-    return "";
-  }
-}
-export function storePerson(id: string): void {
-  try {
-    if (id) localStorage.setItem("ronda-person", id);
-    else localStorage.removeItem("ronda-person");
-  } catch {
-    /* Name entry still works without browser storage. */
-  }
-}
